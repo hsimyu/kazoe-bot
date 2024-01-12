@@ -1,4 +1,6 @@
+use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
+use std::env;
 use tokio;
 
 #[derive(Serialize)]
@@ -8,8 +10,10 @@ struct Message {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let bot_token = "TOKEN";
-    let channel_id = "ID";
+    dotenv::dotenv().ok();
+
+    let bot_token = env::var("DISCORD_BOT_TOKEN").expect("DISCORD_BOT_TOKEN must be set in .env");
+    let channel_id = env::var("TARGET_CHANNEL_ID").expect("TARGET_CHANNEL_ID must be set in .env");
 
     let message_content = "Hello!";
     let api_url = format!(
