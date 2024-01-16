@@ -20,4 +20,3 @@ Cargo.lock
 
 # User
 .env
-node_modules
