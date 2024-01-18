@@ -8,6 +8,7 @@ tokio = { version = "1", features = ["full"] }
 dotenv = "0.15"
 getrandom = { version = "0.2", features = ["js"] }
 rusqlite = { version = "0.30.0", features = ["bundled"] }
+regex = "1.10.2"
 
 [dependencies.serenity]
 default-features = false

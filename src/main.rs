@@ -1,4 +1,5 @@
 use dotenv::dotenv;
+use regex::Regex;
 use rusqlite::{Connection, Result};
 use serenity::{
     all::{GatewayIntents, User},
@@ -42,13 +43,27 @@ impl EventHandler for Handler {
                     println!("Error replying: {:?}", why);
                 }
 
+                // パターンをキャプチャ
+                let re = Regex::new(r"かぞえて (?<pattern>.*)$").unwrap();
+                let Some(caps) = re.captures(&msg.content) else {
+                    println!("no match!");
+                    return;
+                };
+
+                println!("Captured pattern: {}", &caps["pattern"]);
+
                 let record = PatternRecord {
                     id: 0,
                     channel_id: msg.channel_id.to_string(),
-                    pattern: msg.content,
+                    pattern: caps["pattern"].to_string(),
                 };
+
                 register_pattern(&self.db_connection.lock().unwrap(), &record);
                 dump_pattern_record(&self.db_connection.lock().unwrap());
+            } else {
+                // 登録依頼ではないのでパターンを検索する
+                let channel_id = msg.channel_id.to_string();
+                find_pattern(&self.db_connection.lock().unwrap(), &channel_id);
             }
         }
     }
@@ -85,6 +100,26 @@ fn dump_pattern_record(conn: &Connection) {
 
     let iter = stmt
         .query_map([], |row| {
+            Ok(PatternRecord {
+                id: row.get(0)?,
+                channel_id: row.get(1)?,
+                pattern: row.get(2)?,
+            })
+        })
+        .unwrap();
+
+    for mes in iter {
+        println!("Pattern: {:?}", mes.unwrap());
+    }
+}
+
+fn find_pattern(conn: &Connection, channel_id: &String) {
+    let mut stmt = conn
+        .prepare("SELECT * FROM pattern_record WHERE channel_id = ?1")
+        .unwrap();
+
+    let iter = stmt
+        .query_map([&channel_id], |row| {
             Ok(PatternRecord {
                 id: row.get(0)?,
                 channel_id: row.get(1)?,
