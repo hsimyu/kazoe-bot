@@ -4,6 +4,7 @@ use rusqlite::{params, Connection, Result};
 use serenity::{
     all::{GatewayIntents, User},
     async_trait,
+    futures::future::Then,
     model::{channel::Message, gateway::Ready},
     prelude::*,
 };
@@ -45,22 +46,18 @@ impl EventHandler for Handler {
             if msg.content.contains("かぞえて") {
                 // パターンをキャプチャ
                 let re = Regex::new(r"かぞえて\s+(?<pattern>.*)$").unwrap();
-                let Some(caps) = re.captures(&msg.content) else {
-                    reply_to(
-                        &ctx,
-                        &msg,
-                        "\"かぞえて pattern\" のようにお願いしてください。",
-                    )
-                    .await;
-                    return;
+
+                let pattern: String = match re.captures(&msg.content) {
+                    Some(caps) => caps["pattern"].to_string(),
+                    None => "".to_string(),
                 };
 
-                println!("Captured pattern: {}", &caps["pattern"]);
+                println!("Captured pattern: {}", pattern);
 
                 let record = PatternRecord {
                     id: 0,
                     channel_id: msg.channel_id.to_string(),
-                    pattern: caps["pattern"].to_string(),
+                    pattern: pattern,
                 };
 
                 register_pattern(&self.db_connection.lock().unwrap(), &record);
@@ -68,20 +65,34 @@ impl EventHandler for Handler {
             } else {
                 // 登録依頼ではないのでパターンを検索する
                 let channel_id = msg.channel_id.to_string();
+
+                // TODO: ここで取ってくるのを全パターンみないといけない？
+                // パターンに一致するやつだけ取ってくることってできますか？？
                 let pattern_id = find_pattern(&self.db_connection.lock().unwrap(), &channel_id);
 
                 match pattern_id {
-                    Some(pattern_id) => {
-                        println!("Found: pattern_id = {}", pattern_id);
+                    Some(pattern_record) => {
+                        println!("Found: pattern = {:?}", pattern_record);
+
+                        // 発言がマッチしているかを確認する
+                        if !pattern_record.pattern.is_empty() {
+                            if !msg.content.contains(pattern_record.pattern.as_str()) {
+                                reply_to(&ctx, &msg, "ヒヒン").await;
+                                return;
+                            }
+                            reply_to(&ctx, &msg, "ヒヒーン！").await;
+                        }
+
+                        // 発言がマッチしていたのでカウントする
+                        // TODO: パターン設定がある場合は、数字を抽出してインクリメント以外の数え方を実装したい
                         let count = find_count(
                             &self.db_connection.lock().unwrap(),
-                            pattern_id,
+                            pattern_record.id,
                             &msg.author.id.to_string(),
                         );
 
                         match count {
                             Some(mut count_record) => {
-                                // TODO: インクリメント以外の数え方を実装
                                 println!("Found: count = {:?}", count_record);
                                 count_record.count += 1;
                                 update_count(&self.db_connection.lock().unwrap(), &count_record);
@@ -97,7 +108,7 @@ impl EventHandler for Handler {
                                     &self.db_connection.lock().unwrap(),
                                     &CountRecord {
                                         id: 0,
-                                        pattern_id: pattern_id,
+                                        pattern_id: pattern_record.id,
                                         user_id: msg.author.id.to_string(),
                                         count: 1,
                                     },
@@ -184,7 +195,7 @@ fn dump_pattern_record(conn: &Connection) {
     }
 }
 
-fn find_pattern(conn: &Connection, channel_id: &String) -> Option<i32> {
+fn find_pattern(conn: &Connection, channel_id: &String) -> Option<PatternRecord> {
     let mut stmt = conn
         .prepare("SELECT * FROM pattern_record WHERE channel_id = ?1")
         .unwrap();
@@ -199,12 +210,8 @@ fn find_pattern(conn: &Connection, channel_id: &String) -> Option<i32> {
         })
         .unwrap();
 
-    // for mes in iter {
-    //     println!("Found Pattern: {:?}", mes.unwrap());
-    // }
-
     match iter.next() {
-        Some(pattern) => return Some(pattern.unwrap().id),
+        Some(pattern) => return Some(pattern.unwrap()),
         None => return None,
     }
 }
