@@ -29,23 +29,29 @@ struct Handler {
     db_connection: Arc<Mutex<Connection>>,
 }
 
+async fn reply_to(ctx: &Context, msg: &Message, str: &str) {
+    println!("Send reply: {}", str);
+    if let Err(why) = msg.reply(&ctx.http, str).await {
+        println!("Error replying: {:?}", why);
+    }
+}
+
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
         if !msg.author.bot {
-            // println!("Context: {:?}", ctx);
             println!("Message: {}", msg.content);
-            // println!("{:?}", msg);
 
             if msg.content.contains("かぞえて") {
-                if let Err(why) = msg.reply(&ctx.http, "承知しました！").await {
-                    println!("Error replying: {:?}", why);
-                }
-
                 // パターンをキャプチャ
                 let re = Regex::new(r"かぞえて\s+(?<pattern>.*)$").unwrap();
                 let Some(caps) = re.captures(&msg.content) else {
-                    println!("no match!");
+                    reply_to(
+                        &ctx,
+                        &msg,
+                        "\"かぞえて pattern\" のようにお願いしてください。",
+                    )
+                    .await;
                     return;
                 };
 
@@ -58,7 +64,7 @@ impl EventHandler for Handler {
                 };
 
                 register_pattern(&self.db_connection.lock().unwrap(), &record);
-                dump_pattern_record(&self.db_connection.lock().unwrap());
+                reply_to(&ctx, &msg, "ヒヒーン！").await;
             } else {
                 // 登録依頼ではないのでパターンを検索する
                 let channel_id = msg.channel_id.to_string();
@@ -74,21 +80,29 @@ impl EventHandler for Handler {
                         );
 
                         match count {
-                            Some(count) => {
-                                // TODO: カウントをインクリメント
-                                println!("Found: count = {}", count);
+                            Some(mut count_record) => {
+                                // TODO: インクリメント以外の数え方を実装
+                                println!("Found: count = {:?}", count_record);
+                                count_record.count += 1;
+                                update_count(&self.db_connection.lock().unwrap(), &count_record);
+                                reply_to(
+                                    &ctx,
+                                    &msg,
+                                    format!("count: {}", count_record.count).as_str(),
+                                )
+                                .await;
                             }
                             None => {
-                                println!("count not found, insert new count_record");
                                 register_new_count(
                                     &self.db_connection.lock().unwrap(),
                                     &CountRecord {
                                         id: 0,
                                         pattern_id: pattern_id,
                                         user_id: msg.author.id.to_string(),
-                                        count: 0,
+                                        count: 1,
                                     },
-                                )
+                                );
+                                reply_to(&ctx, &msg, format!("start: {}", 1).as_str()).await;
                             }
                         }
                     }
@@ -106,7 +120,7 @@ impl EventHandler for Handler {
 fn create_table(conn: &Connection) {
     conn.execute(
         "CREATE TABLE pattern_record (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             channel_id TEXT NOT NULL,
             pattern TEXT NOT NULL
         )",
@@ -116,7 +130,7 @@ fn create_table(conn: &Connection) {
 
     conn.execute(
         "CREATE TABLE count_record (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             pattern_id INTEGER NOT NULL,
             user_id TEXT NOT NULL,
             count INTEGER NOT NULL
@@ -128,18 +142,26 @@ fn create_table(conn: &Connection) {
 
 fn register_pattern(conn: &Connection, record: &PatternRecord) {
     conn.execute(
-        "INSERT INTO pattern_record (id, channel_id, pattern) VALUES (?1, ?2, ?3)",
-        (&record.id, &record.channel_id, &record.pattern),
+        "INSERT INTO pattern_record (channel_id, pattern) VALUES (?1, ?2)",
+        (&record.channel_id, &record.pattern),
     )
     .expect("Failed to insert message");
 }
 
 fn register_new_count(conn: &Connection, record: &CountRecord) {
     conn.execute(
-        "INSERT INTO count_record (id, pattern_id, user_id, count) VALUES (?1, ?2, ?3, ?4)",
-        (&record.id, &record.pattern_id, &record.user_id, 0),
+        "INSERT INTO count_record (pattern_id, user_id, count) VALUES (?1, ?2, ?3)",
+        (&record.pattern_id, &record.user_id, 0),
     )
     .expect("Failed to insert count");
+}
+
+fn update_count(conn: &Connection, record: &CountRecord) {
+    conn.execute(
+        "UPDATE count_record SET count = ?1 WHERE id = ?2",
+        params![&record.count, &record.id],
+    )
+    .expect("Failed to update count");
 }
 
 fn dump_pattern_record(conn: &Connection) {
@@ -187,7 +209,7 @@ fn find_pattern(conn: &Connection, channel_id: &String) -> Option<i32> {
     }
 }
 
-fn find_count(conn: &Connection, pattern_id: i32, user_id: &String) -> Option<i32> {
+fn find_count(conn: &Connection, pattern_id: i32, user_id: &String) -> Option<CountRecord> {
     println!("search count by {} {}", pattern_id, user_id);
     let mut stmt = conn
         .prepare("SELECT * FROM count_record WHERE pattern_id = ?1 and user_id = ?2")
@@ -205,7 +227,7 @@ fn find_count(conn: &Connection, pattern_id: i32, user_id: &String) -> Option<i3
         .unwrap();
 
     match iter.next() {
-        Some(count) => return Some(count.unwrap().count),
+        Some(count) => return Some(count.unwrap()),
         None => return None,
     }
 }
