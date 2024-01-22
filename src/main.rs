@@ -176,26 +176,6 @@ fn update_count(conn: &Connection, record: &CountRecord) {
     .expect("Failed to update count");
 }
 
-fn dump_pattern_record(conn: &Connection) {
-    let mut stmt = conn
-        .prepare("SELECT id, channel_id, pattern FROM pattern_record")
-        .unwrap();
-
-    let iter = stmt
-        .query_map([], |row| {
-            Ok(PatternRecord {
-                id: row.get(0)?,
-                channel_id: row.get(1)?,
-                pattern: row.get(2)?,
-            })
-        })
-        .unwrap();
-
-    for mes in iter {
-        println!("Pattern: {:?}", mes.unwrap());
-    }
-}
-
 fn find_pattern(conn: &Connection, channel_id: &String, message: &String) -> Option<PatternRecord> {
     let mut stmt = conn
         .prepare("SELECT * FROM pattern_record WHERE channel_id = ?1")
