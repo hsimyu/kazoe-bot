@@ -49,7 +49,15 @@ impl EventHandler for Handler {
 
                 let pattern: String = match re.captures(&msg.content) {
                     Some(caps) => caps["pattern"].to_string(),
-                    None => "".to_string(),
+                    None => {
+                        reply_to(
+                            &ctx,
+                            &msg,
+                            "\"かぞえて [pattern]\" のようにお願いしてくださいヒン",
+                        )
+                        .await;
+                        return;
+                    }
                 };
 
                 println!("Captured pattern: {}", pattern);
@@ -66,22 +74,15 @@ impl EventHandler for Handler {
                 // 登録依頼ではないのでパターンを検索する
                 let channel_id = msg.channel_id.to_string();
 
-                // TODO: ここで取ってくるのを全パターンみないといけない？
-                // パターンに一致するやつだけ取ってくることってできますか？？
-                let pattern_id = find_pattern(&self.db_connection.lock().unwrap(), &channel_id);
+                let result = find_pattern(
+                    &self.db_connection.lock().unwrap(),
+                    &channel_id,
+                    &msg.content,
+                );
 
-                match pattern_id {
+                match result {
                     Some(pattern_record) => {
                         println!("Found: pattern = {:?}", pattern_record);
-
-                        // 発言がマッチしているかを確認する
-                        if !pattern_record.pattern.is_empty() {
-                            if !msg.content.contains(pattern_record.pattern.as_str()) {
-                                reply_to(&ctx, &msg, "ヒヒン").await;
-                                return;
-                            }
-                            reply_to(&ctx, &msg, "ヒヒーン！").await;
-                        }
 
                         // 発言がマッチしていたのでカウントする
                         // TODO: パターン設定がある場合は、数字を抽出してインクリメント以外の数え方を実装したい
@@ -117,7 +118,7 @@ impl EventHandler for Handler {
                             }
                         }
                     }
-                    None => println!("Registered pattern not found"),
+                    None => return, // 何もしない
                 }
             }
         }
@@ -162,7 +163,7 @@ fn register_pattern(conn: &Connection, record: &PatternRecord) {
 fn register_new_count(conn: &Connection, record: &CountRecord) {
     conn.execute(
         "INSERT INTO count_record (pattern_id, user_id, count) VALUES (?1, ?2, ?3)",
-        (&record.pattern_id, &record.user_id, 0),
+        (&record.pattern_id, &record.user_id, &record.count),
     )
     .expect("Failed to insert count");
 }
@@ -195,12 +196,12 @@ fn dump_pattern_record(conn: &Connection) {
     }
 }
 
-fn find_pattern(conn: &Connection, channel_id: &String) -> Option<PatternRecord> {
+fn find_pattern(conn: &Connection, channel_id: &String, message: &String) -> Option<PatternRecord> {
     let mut stmt = conn
         .prepare("SELECT * FROM pattern_record WHERE channel_id = ?1")
         .unwrap();
 
-    let mut iter = stmt
+    let iter = stmt
         .query_map([&channel_id], |row| {
             Ok(PatternRecord {
                 id: row.get(0)?,
@@ -210,10 +211,18 @@ fn find_pattern(conn: &Connection, channel_id: &String) -> Option<PatternRecord>
         })
         .unwrap();
 
-    match iter.next() {
-        Some(pattern) => return Some(pattern.unwrap()),
-        None => return None,
+    for pattern_record in iter {
+        let pattern_record = pattern_record.unwrap();
+        // 発言がマッチしているかを確認する
+        if !pattern_record.pattern.is_empty() {
+            if message.contains(pattern_record.pattern.as_str()) {
+                return Some(pattern_record);
+            }
+        }
     }
+
+    // マッチするパターンがなかった
+    None
 }
 
 fn find_count(conn: &Connection, pattern_id: i32, user_id: &String) -> Option<CountRecord> {
