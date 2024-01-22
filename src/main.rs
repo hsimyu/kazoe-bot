@@ -1,30 +1,19 @@
 use dotenv::dotenv;
+use record::create_table;
 use regex::Regex;
 use rusqlite::{params, Connection, Result};
 use serenity::{
     all::{GatewayIntents, User},
     async_trait,
-    futures::future::Then,
     model::{channel::Message, gateway::Ready},
     prelude::*,
 };
 use std::{env, sync::Arc, sync::Mutex};
 use tokio;
 
-#[derive(Debug)]
-struct PatternRecord {
-    id: i32,
-    channel_id: String,
-    pattern: String,
-}
+use crate::record::*;
 
-#[derive(Debug)]
-struct CountRecord {
-    id: i32,
-    pattern_id: i32,
-    user_id: String,
-    count: i32,
-}
+mod record;
 
 struct Handler {
     db_connection: Arc<Mutex<Connection>>,
@@ -135,104 +124,6 @@ impl EventHandler for Handler {
 
     async fn ready(&self, _: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
-    }
-}
-
-fn create_table(conn: &Connection) {
-    conn.execute(
-        "CREATE TABLE pattern_record (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            channel_id TEXT NOT NULL,
-            pattern TEXT NOT NULL
-        )",
-        (),
-    )
-    .expect("Failed to create pattern_record");
-
-    conn.execute(
-        "CREATE TABLE count_record (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pattern_id INTEGER NOT NULL,
-            user_id TEXT NOT NULL,
-            count INTEGER NOT NULL
-        )",
-        (),
-    )
-    .expect("Failed to create count_record");
-}
-
-fn register_pattern(conn: &Connection, record: &PatternRecord) {
-    conn.execute(
-        "INSERT INTO pattern_record (channel_id, pattern) VALUES (?1, ?2)",
-        (&record.channel_id, &record.pattern),
-    )
-    .expect("Failed to insert message");
-}
-
-fn register_new_count(conn: &Connection, record: &CountRecord) {
-    conn.execute(
-        "INSERT INTO count_record (pattern_id, user_id, count) VALUES (?1, ?2, ?3)",
-        (&record.pattern_id, &record.user_id, &record.count),
-    )
-    .expect("Failed to insert count");
-}
-
-fn update_count(conn: &Connection, record: &CountRecord) {
-    conn.execute(
-        "UPDATE count_record SET count = ?1 WHERE id = ?2",
-        params![&record.count, &record.id],
-    )
-    .expect("Failed to update count");
-}
-
-fn find_pattern(conn: &Connection, channel_id: &String, message: &String) -> Option<PatternRecord> {
-    let mut stmt = conn
-        .prepare("SELECT * FROM pattern_record WHERE channel_id = ?1")
-        .unwrap();
-
-    let iter = stmt
-        .query_map([&channel_id], |row| {
-            Ok(PatternRecord {
-                id: row.get(0)?,
-                channel_id: row.get(1)?,
-                pattern: row.get(2)?,
-            })
-        })
-        .unwrap();
-
-    for pattern_record in iter {
-        let pattern_record = pattern_record.unwrap();
-        // 発言がマッチしているかを確認する
-        if !pattern_record.pattern.is_empty() {
-            if message.contains(pattern_record.pattern.as_str()) {
-                return Some(pattern_record);
-            }
-        }
-    }
-
-    // マッチするパターンがなかった
-    None
-}
-
-fn find_count(conn: &Connection, pattern_id: i32, user_id: &String) -> Option<CountRecord> {
-    let mut stmt = conn
-        .prepare("SELECT * FROM count_record WHERE pattern_id = ?1 and user_id = ?2")
-        .unwrap();
-
-    let mut iter = stmt
-        .query_map(params![&pattern_id, &user_id], |row| {
-            Ok(CountRecord {
-                id: row.get(0)?,
-                pattern_id: row.get(1)?,
-                user_id: row.get(2)?,
-                count: row.get(3)?,
-            })
-        })
-        .unwrap();
-
-    match iter.next() {
-        Some(count) => return Some(count.unwrap()),
-        None => return None,
     }
 }
 
