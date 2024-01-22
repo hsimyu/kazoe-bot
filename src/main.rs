@@ -84,8 +84,21 @@ impl EventHandler for Handler {
                     Some(pattern_record) => {
                         println!("Found: pattern = {:?}", pattern_record);
 
+                        // 数字を抽出できたらそれを量として加算する
+                        let re = Regex::new(
+                            format!("(?<count>\\d+)\\s*{}", pattern_record.pattern.as_str())
+                                .as_str(),
+                        )
+                        .unwrap();
+
+                        let amount: i32 = match re.captures(&msg.content) {
+                            Some(caps) => caps["count"].to_string().parse().unwrap(),
+                            None => 1,
+                        };
+
+                        println!("captured amount = {}", amount);
+
                         // 発言がマッチしていたのでカウントする
-                        // TODO: パターン設定がある場合は、数字を抽出してインクリメント以外の数え方を実装したい
                         let count = find_count(
                             &self.db_connection.lock().unwrap(),
                             pattern_record.id,
@@ -95,14 +108,10 @@ impl EventHandler for Handler {
                         match count {
                             Some(mut count_record) => {
                                 println!("Found: count = {:?}", count_record);
-                                count_record.count += 1;
+                                count_record.count += amount;
                                 update_count(&self.db_connection.lock().unwrap(), &count_record);
-                                reply_to(
-                                    &ctx,
-                                    &msg,
-                                    format!("count: {}", count_record.count).as_str(),
-                                )
-                                .await;
+                                reply_to(&ctx, &msg, format!("{}", count_record.count).as_str())
+                                    .await;
                             }
                             None => {
                                 register_new_count(
@@ -111,10 +120,10 @@ impl EventHandler for Handler {
                                         id: 0,
                                         pattern_id: pattern_record.id,
                                         user_id: msg.author.id.to_string(),
-                                        count: 1,
+                                        count: amount,
                                     },
                                 );
-                                reply_to(&ctx, &msg, format!("start: {}", 1).as_str()).await;
+                                reply_to(&ctx, &msg, format!("{}", amount).as_str()).await;
                             }
                         }
                     }
@@ -206,7 +215,6 @@ fn find_pattern(conn: &Connection, channel_id: &String, message: &String) -> Opt
 }
 
 fn find_count(conn: &Connection, pattern_id: i32, user_id: &String) -> Option<CountRecord> {
-    println!("search count by {} {}", pattern_id, user_id);
     let mut stmt = conn
         .prepare("SELECT * FROM count_record WHERE pattern_id = ?1 and user_id = ?2")
         .unwrap();
