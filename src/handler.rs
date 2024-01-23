@@ -1,5 +1,7 @@
 use regex::Regex;
 use rusqlite::Connection;
+use serenity::cache::Cache;
+use serenity::prelude::Context;
 use serenity::{
     async_trait,
     model::{channel::Message, gateway::Ready},
@@ -201,24 +203,32 @@ async fn try_remove_pattern(handler: &Handler, ctx: &Context, msg: &Message) {
     }
 }
 
+fn is_mention_to_bot(ctx: &Context, msg: &Message) -> bool {
+    // NOTE: msg.mentions_me() に ctx.cache をうまく渡せないので使用していない
+    let bot_id = ctx.cache.current_user().id;
+    let mentions = msg.mentions.clone();
+    return mentions.iter().any(|mention| mention.id == bot_id);
+}
+
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
         if !msg.author.bot {
             println!("Message: {}", msg.content);
 
-            // TODO: bot へのメンションを区別できるようにする
-
-            if msg.content.contains("かぞえて") {
-                register_new_pattern(&self, &ctx, &msg).await;
-            } else if msg.content.contains("うわがき") {
-                // 設定値を更新する
-                try_set_count(&self, &ctx, &msg).await;
-            } else if msg.content.contains("けして") {
-                // 設定値を更新する
-                try_remove_pattern(&self, &ctx, &msg).await;
+            // bot 自身へのメンションならパターン登録/編集する
+            if is_mention_to_bot(&ctx, &msg) {
+                if msg.content.contains("かぞえて") {
+                    register_new_pattern(&self, &ctx, &msg).await;
+                } else if msg.content.contains("うわがき") {
+                    // 設定値を更新する
+                    try_set_count(&self, &ctx, &msg).await;
+                } else if msg.content.contains("けして") {
+                    // 設定値を更新する
+                    try_remove_pattern(&self, &ctx, &msg).await;
+                }
             } else {
-                // 登録依頼ではないので数えてみる
+                // そうではないので、パターン一致かどうか確認する
                 try_count_new_message(&self, &ctx, &msg).await;
             }
         }
