@@ -16,17 +16,19 @@ pub struct CountRecord {
 }
 
 pub fn create_table(conn: &Connection) {
-    conn.execute(
+    match conn.execute(
         "CREATE TABLE pattern_record (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             channel_id TEXT NOT NULL,
             pattern TEXT NOT NULL
         )",
         (),
-    )
-    .expect("Failed to create pattern_record");
+    ) {
+        Ok(_) => println!("Create: pattern_record"),
+        Err(_) => println!("pattern_record already exists."),
+    };
 
-    conn.execute(
+    match conn.execute(
         "CREATE TABLE count_record (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             pattern_id INTEGER NOT NULL,
@@ -34,8 +36,10 @@ pub fn create_table(conn: &Connection) {
             count INTEGER NOT NULL
         )",
         (),
-    )
-    .expect("Failed to create count_record");
+    ) {
+        Ok(_) => println!("Create: count_record"),
+        Err(_) => println!("count_record already exists."),
+    }
 }
 
 pub fn register_pattern(conn: &Connection, record: &PatternRecord) {

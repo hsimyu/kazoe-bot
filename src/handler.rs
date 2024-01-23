@@ -1,6 +1,5 @@
 use regex::Regex;
 use rusqlite::Connection;
-use serenity::cache::Cache;
 use serenity::prelude::Context;
 use serenity::{
     async_trait,

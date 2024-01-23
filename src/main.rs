@@ -11,9 +11,13 @@ use tokio;
 
 #[tokio::main]
 async fn main() {
-    let conn = Connection::open_in_memory().expect("Failed to open memory");
+    let db_file_path = "umakazoe.db";
+    let conn = Connection::open(db_file_path).unwrap();
+
+    println!("-- Initialize Table --");
     create_table(&conn);
 
+    println!("-- Initialize Bot Client --");
     dotenv().ok();
 
     let conn = Arc::new(Mutex::new(conn));
@@ -28,6 +32,7 @@ async fn main() {
         .await
         .expect("Error creating client");
 
+    println!("-- Start Bot --");
     if let Err(why) = client.start().await {
         println!("Client error: {:?}", why);
     }
