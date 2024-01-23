@@ -174,6 +174,33 @@ async fn try_set_count(handler: &Handler, ctx: &Context, msg: &Message) {
     }
 }
 
+async fn try_remove_pattern(handler: &Handler, ctx: &Context, msg: &Message) {
+    let channel_id = msg.channel_id.to_string();
+
+    let result = find_pattern(
+        &handler.db_connection.lock().unwrap(),
+        &channel_id,
+        &msg.content,
+    );
+
+    match result {
+        Some(pattern_record) => {
+            println!("Found: pattern = {:?}", pattern_record);
+            //発見したパターンを削除する
+
+            delete_pattern(&handler.db_connection.lock().unwrap(), pattern_record.id);
+
+            reply_to(
+                &ctx,
+                &msg,
+                format!("削除しました: {}", pattern_record.pattern).as_str(),
+            )
+            .await;
+        }
+        None => return, // 何もしない
+    }
+}
+
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
@@ -187,6 +214,9 @@ impl EventHandler for Handler {
             } else if msg.content.contains("うわがき") {
                 // 設定値を更新する
                 try_set_count(&self, &ctx, &msg).await;
+            } else if msg.content.contains("けして") {
+                // 設定値を更新する
+                try_remove_pattern(&self, &ctx, &msg).await;
             } else {
                 // 登録依頼ではないので数えてみる
                 try_count_new_message(&self, &ctx, &msg).await;

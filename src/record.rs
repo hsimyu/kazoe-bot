@@ -46,6 +46,14 @@ pub fn register_pattern(conn: &Connection, record: &PatternRecord) {
     .expect("Failed to insert message");
 }
 
+pub fn delete_pattern(conn: &Connection, pattern_id: i32) {
+    conn.execute(
+        "DELETE FROM pattern_record WHERE id = ?1",
+        params![pattern_id],
+    )
+    .expect("Failed to delete pattern");
+}
+
 pub fn register_new_count(conn: &Connection, record: &CountRecord) {
     conn.execute(
         "INSERT INTO count_record (pattern_id, user_id, count) VALUES (?1, ?2, ?3)",
