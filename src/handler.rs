@@ -1,11 +1,14 @@
 use regex::Regex;
 use rusqlite::Connection;
+use serde::Deserialize;
 use serenity::prelude::Context;
 use serenity::{
     async_trait,
     model::{channel::Message, gateway::Ready},
     prelude::*,
 };
+use std::fs::File;
+use std::io::Read;
 use std::{sync::Arc, sync::Mutex};
 
 use crate::record::*;
@@ -88,7 +91,14 @@ async fn try_count_new_message(handler: &Handler, ctx: &Context, msg: &Message) 
                     println!("Found: count = {:?}", count_record);
                     count_record.count += amount;
                     update_count(&handler.db_connection.lock().unwrap(), &count_record);
-                    reply_to(&ctx, &msg, format!("{}", count_record.count).as_str()).await;
+
+                    if count_record.count == 3 {
+                        let praise_message_path = "praise.json";
+                        let praise_messages = load_praise_message(praise_message_path);
+                        reply_to(&ctx, &msg, generate_praise(&praise_messages).as_str()).await;
+                    } else {
+                        reply_to(&ctx, &msg, format!("{}", count_record.count).as_str()).await;
+                    }
                 }
                 None => {
                     register_new_count(
@@ -236,4 +246,44 @@ impl EventHandler for Handler {
     async fn ready(&self, _: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PraiseMessages {
+    pub start: Vec<String>,
+    pub count: Vec<String>,
+    pub end: Vec<String>,
+}
+
+// JSONファイルからメッセージを読み取る関数
+pub fn load_praise_message(file_path: &str) -> PraiseMessages {
+    // ファイルを開く
+    let mut file = File::open(file_path).expect("Failed to open file");
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .expect("Failed to read file");
+
+    let praise_messages: PraiseMessages =
+        serde_json::from_str(&contents).expect("Failed to deserialize JSON");
+
+    praise_messages
+}
+
+use rand::seq::SliceRandom;
+pub fn generate_praise(praise_messages: &PraiseMessages) -> String {
+    let mut rng = rand::thread_rng();
+    let start = praise_messages
+        .start
+        .choose(&mut rng)
+        .expect("start is empty");
+
+    let count = praise_messages
+        .count
+        .choose(&mut rng)
+        .expect("count is empty");
+
+    let end = praise_messages.end.choose(&mut rng).expect("end is empty");
+
+    format!("{}{}{}", start, count, end)
 }
