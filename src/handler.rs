@@ -95,7 +95,12 @@ async fn try_count_new_message(handler: &Handler, ctx: &Context, msg: &Message) 
                     if count_record.count == 3 {
                         let praise_message_path = "praise.json";
                         let praise_messages = load_praise_message(praise_message_path);
-                        reply_to(&ctx, &msg, generate_praise(&praise_messages).as_str()).await;
+                        reply_to(
+                            &ctx,
+                            &msg,
+                            generate_praise(&praise_messages, count_record.count).as_str(),
+                        )
+                        .await;
                     } else {
                         reply_to(&ctx, &msg, format!("{}", count_record.count).as_str()).await;
                     }
@@ -250,9 +255,8 @@ impl EventHandler for Handler {
 
 #[derive(Debug, Deserialize)]
 pub struct PraiseMessages {
-    pub start: Vec<String>,
     pub count: Vec<String>,
-    pub end: Vec<String>,
+    pub message: Vec<String>,
 }
 
 // JSONファイルからメッセージを読み取る関数
@@ -271,19 +275,18 @@ pub fn load_praise_message(file_path: &str) -> PraiseMessages {
 }
 
 use rand::seq::SliceRandom;
-pub fn generate_praise(praise_messages: &PraiseMessages) -> String {
+pub fn generate_praise(praise_messages: &PraiseMessages, count: i32) -> String {
     let mut rng = rand::thread_rng();
-    let start = praise_messages
-        .start
-        .choose(&mut rng)
-        .expect("start is empty");
-
-    let count = praise_messages
+    let count_msg = praise_messages
         .count
         .choose(&mut rng)
         .expect("count is empty");
 
-    let end = praise_messages.end.choose(&mut rng).expect("end is empty");
+    let message = praise_messages
+        .message
+        .choose(&mut rng)
+        .expect("message is empty");
 
-    format!("{}{}{}", start, count, end)
+    let count_msg = count_msg.replace("{count}", count.to_string().as_str());
+    format!("{}{}", count_msg, message)
 }
